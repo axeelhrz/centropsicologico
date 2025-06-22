@@ -1,28 +1,28 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import { Inter, Space_Grotesk } from 'next/font/google';
 import './globals.css';
-import { AuthProvider } from '@/context/AuthContext';
-import { ThemeProvider } from '@/context/ThemeContext';
+import { AuthProvider } from '@/contexts/AuthContext';
 
 const inter = Inter({ 
   subsets: ['latin'],
-  display: 'swap',
-  variable: '--font-inter',
+  variable: '--font-inter'
+});
+
+const spaceGrotesk = Space_Grotesk({ 
+  subsets: ['latin'],
+  variable: '--font-space-grotesk'
 });
 
 export const metadata: Metadata = {
-  title: 'Centro Psicológico - Plataforma de Gestión',
-  description: 'Plataforma inteligente para la gestión de centros psicológicos',
-  keywords: 'psicología, terapia, gestión, pacientes, sesiones',
+  title: 'Centro Psicológico - Dashboard Ejecutivo',
+  description: 'Plataforma de gestión inteligente para centros psicológicos con IA integrada',
+  keywords: 'psicología, gestión, dashboard, IA, centro psicológico',
+  authors: [{ name: 'Centro Psicológico' }],
 };
 
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
-    { media: '(prefers-color-scheme: dark)', color: '#1a1d29' },
-  ],
 };
 
 export default function RootLayout({
@@ -31,27 +31,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es" className={inter.variable} suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              try {
-                if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                  document.documentElement.classList.add('dark')
-                } else {
-                  document.documentElement.classList.remove('dark')
-                }
-              } catch (_) {}
-            `,
-          }}
-        />
-      </head>
-      <body className={`${inter.className} antialiased`} suppressHydrationWarning>
+    <html lang="es" className={`${inter.variable} ${spaceGrotesk.variable}`}>
+      <body style={{ margin: 0, padding: 0, fontFamily: 'var(--font-inter)' }}>
         <AuthProvider>
-          <ThemeProvider>
-            {children}
-          </ThemeProvider>
+          {children}
         </AuthProvider>
       </body>
     </html>

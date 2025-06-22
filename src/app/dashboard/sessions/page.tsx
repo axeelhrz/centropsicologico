@@ -1,573 +1,1013 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Box,
-  Typography,
-  Button,
-  Stack,
-  Container,
-  Paper,
-  Alert,
-  Snackbar,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogContentText,
-  DialogActions,
-  Fade,
-  useTheme,
-  alpha,
-} from '@mui/material';
-import {
-  Add as AddIcon,
-  Psychology as PsychologyIcon,
-  Schedule as ScheduleIcon,
-  CheckCircle as CheckCircleIcon,
-  SmartToy as SmartToyIcon,
-  Assessment as AssessmentIcon,
-} from '@mui/icons-material';
-
-import DashboardLayout from '@/components/layout/DashboardLayout';
-import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import SessionsTable from '@/components/sessions/SessionsTable';
-import SessionFilters from '@/components/sessions/SessionFilters';
-import SessionDialog from '@/components/sessions/SessionDialog';
-import SessionView from '@/components/sessions/SessionView';
-
-import { Session, SessionFilters as SessionFiltersType } from '@/types/session';
-import { User } from '@/types/auth';
-import { useSessions, useSessionActions } from '@/hooks/useSessions';
-import { usePatients } from '@/hooks/usePatients';
-import { useAuth } from '@/context/AuthContext';
-import { FirestoreService } from '@/services/firestore';
-
-interface StatCardProps {
-  title: string;
-  value: string | number;
-  icon: React.ReactNode;
-  color: string;
-  subtitle?: string;
-  trend?: {
-    value: number;
-    isPositive: boolean;
-  };
-}
-
-function StatCard({ title, value, icon, color, subtitle, trend }: StatCardProps) {
-  const theme = useTheme();
-  
-  return (
-    <Fade in timeout={600}>
-      <Paper 
-        sx={{ 
-          height: '100%',
-          p: 3,
-          borderRadius: 'xl',
-          background: `linear-gradient(135deg, ${alpha(color, 0.05)} 0%, ${alpha(color, 0.02)} 100%)`,
-          border: `1px solid ${alpha(color, 0.1)}`,
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          '&:hover': {
-            transform: 'translateY(-4px)',
-            boxShadow: `0 20px 25px -5px ${alpha(color, 0.1)}, 0 8px 10px -6px ${alpha(color, 0.1)}`,
-            border: `1px solid ${alpha(color, 0.2)}`,
-          }
-        }}
-      >
-        <Stack spacing={2} height="100%">
-          <Box display="flex" alignItems="center" justifyContent="space-between">
-            <Box
-              sx={{
-                p: 1.5,
-                borderRadius: 'xl',
-                background: `linear-gradient(135deg, ${color} 0%, ${alpha(color, 0.8)} 100%)`,
-                color: 'white',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              {icon}
-            </Box>
-            {trend && (
-              <Box
-                sx={{
-                  px: 1.5,
-                  py: 0.5,
-                  borderRadius: 'xl',
-                  bgcolor: trend.isPositive ? alpha(theme.palette.success.main, 0.1) : alpha(theme.palette.error.main, 0.1),
-                  color: trend.isPositive ? theme.palette.success.main : theme.palette.error.main,
-                  fontSize: '0.75rem',
-                  fontWeight: 600,
-                }}
-              >
-                {trend.isPositive ? '+' : ''}{trend.value}%
-              </Box>
-            )}
-          </Box>
-          
-          <Box>
-            <Typography 
-              variant="h4" 
-              fontWeight={700} 
-              color={color}
-              sx={{ 
-                background: `linear-gradient(135deg, ${color} 0%, ${alpha(color, 0.7)} 100%)`,
-                backgroundClip: 'text',
-                WebkitBackgroundClip: 'text',
-                WebkitTextFillColor: 'transparent',
-              }}
-            >
-              {value}
-            </Typography>
-            <Typography 
-              variant="subtitle1" 
-              color="text.primary" 
-              fontWeight={600}
-              sx={{ mt: 0.5 }}
-            >
-              {title}
-            </Typography>
-            {subtitle && (
-              <Typography 
-                variant="body2" 
-                color="text.secondary"
-                sx={{ mt: 0.5 }}
-              >
-                {subtitle}
-              </Typography>
-            )}
-          </Box>
-        </Stack>
-      </Paper>
-    </Fade>
-  );
-}
+  FileText,
+  Search,
+  Filter,
+  Download,
+  Brain,
+  Calendar,
+  Clock,
+  DollarSign,
+  AlertCircle,
+  CheckCircle,
+  XCircle,
+  Eye,
+  Edit,
+  ChevronDown,
+  Sparkles,
+} from 'lucide-react';
+import { Session } from '@/types/dashboard';
 
 export default function SessionsPage() {
-  const theme = useTheme();
-  const { user } = useAuth();
-  const [filters, setFilters] = useState<SessionFiltersType>({});
-  const [professionals, setProfessionals] = useState<User[]>([]);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [viewDialogOpen, setViewDialogOpen] = useState(false);
-  const [selectedSession, setSelectedSession] = useState<Session | null>(null);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [sessionToDelete, setSessionToDelete] = useState<Session | null>(null);
-  const [snackbar, setSnackbar] = useState<{
-    open: boolean;
-    message: string;
-    severity: 'success' | 'error' | 'info' | 'warning';
-  }>({
-    open: false,
-    message: '',
-    severity: 'success'
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [filteredSessions, setFilteredSessions] = useState<Session[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedFilters, setSelectedFilters] = useState({
+    status: 'all',
+    type: 'all',
+    therapist: 'all',
+    dateRange: '30'
   });
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedSessions, setSelectedSessions] = useState<string[]>([]);
 
-  const { sessions, loading, error, refresh } = useSessions(filters);
-  const { patients } = usePatients();
-  const { deleteSession, reprocessWithAI, loading: actionLoading, aiProcessing } = useSessionActions();
-
-  // Cargar profesionales del centro
+  // Mock data para desarrollo
   useEffect(() => {
-    const loadProfessionals = async () => {
-      if (!user?.centerId) return;
-      
-      try {
-        const centerUsers = await FirestoreService.getCenterUsers(user.centerId);
-        const professionalUsers = centerUsers.filter(u => 
-          u.role === 'psychologist' || u.role === 'admin'
-        );
-        setProfessionals(professionalUsers);
-      } catch (error) {
-        console.error('Error loading professionals:', error);
+    const mockSessions: Session[] = [
+      {
+        id: '1',
+        patientId: '1',
+        therapistId: 'therapist1',
+        date: new Date('2024-03-10T10:00:00'),
+        duration: 60,
+        type: 'individual',
+        status: 'completed',
+        notes: 'Sesión muy productiva. La paciente mostró avances significativos en el manejo de la ansiedad. Se trabajó con técnicas de respiración y reestructuración cognitiva.',
+        aiSummary: 'Progreso positivo en manejo de ansiedad. Técnicas de respiración efectivas. Recomendación: continuar con exposición gradual.',
+        emotionalState: {
+          before: 7,
+          after: 4
+        },
+        interventions: ['Técnicas de respiración', 'Reestructuración cognitiva', 'Relajación muscular'],
+        homework: ['Práctica diaria de respiración', 'Registro de pensamientos automáticos'],
+        nextSessionGoals: ['Exposición gradual a situaciones temidas', 'Reforzar técnicas aprendidas'],
+        cost: 80,
+        paid: true
+      },
+      {
+        id: '2',
+        patientId: '2',
+        therapistId: 'therapist2',
+        date: new Date('2024-03-08T15:30:00'),
+        duration: 50,
+        type: 'individual',
+        status: 'completed',
+        notes: 'Paciente con episodio depresivo. Se observa mejoría leve en el estado de ánimo. Continúa con ideación suicida pasiva, requiere seguimiento estrecho.',
+        aiSummary: 'Mejoría leve en depresión. Mantiene ideación suicida pasiva. Requiere monitoreo continuo y posible ajuste farmacológico.',
+        emotionalState: {
+          before: 8,
+          after: 6
+        },
+        interventions: ['Terapia cognitivo-conductual', 'Activación conductual', 'Evaluación de riesgo suicida'],
+        homework: ['Registro de actividades placenteras', 'Contacto con red de apoyo'],
+        nextSessionGoals: ['Reevaluación de riesgo suicida', 'Planificación de actividades'],
+        cost: 85,
+        paid: true
+      },
+      {
+        id: '3',
+        patientId: '3',
+        therapistId: 'therapist3',
+        date: new Date('2024-03-12T11:00:00'),
+        duration: 45,
+        type: 'family',
+        status: 'completed',
+        notes: 'Sesión familiar con adolescente con trastorno alimentario. Buena participación de los padres. Se trabajó en comunicación familiar y establecimiento de límites.',
+        aiSummary: 'Sesión familiar productiva. Mejora en comunicación. Padres comprometidos con el tratamiento. Continuar terapia familiar.',
+        emotionalState: {
+          before: 6,
+          after: 5
+        },
+        interventions: ['Terapia familiar sistémica', 'Psicoeducación', 'Comunicación asertiva'],
+        homework: ['Implementar acuerdos familiares', 'Registro de comidas en familia'],
+        nextSessionGoals: ['Reforzar límites saludables', 'Trabajar autoestima'],
+        cost: 100,
+        paid: false
+      },
+      {
+        id: '4',
+        patientId: '1',
+        therapistId: 'therapist1',
+        date: new Date('2024-03-15T14:00:00'),
+        duration: 60,
+        type: 'individual',
+        status: 'scheduled',
+        notes: '',
+        emotionalState: {
+          before: 0,
+          after: 0
+        },
+        interventions: [],
+        homework: [],
+        nextSessionGoals: [],
+        cost: 80,
+        paid: false
       }
-    };
+    ];
+    setSessions(mockSessions);
+    setFilteredSessions(mockSessions);
+  }, []);
 
-    loadProfessionals();
-  }, [user?.centerId]);
+  // Filtrar sesiones
+  useEffect(() => {
+    const filtered = sessions.filter(session => {
+      const matchesSearch = 
+        session.notes.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        session.id.includes(searchQuery);
 
-  const handleCreateSession = () => {
-    setSelectedSession(null);
-    setDialogOpen(true);
-  };
+      const matchesStatus = selectedFilters.status === 'all' || session.status === selectedFilters.status;
+      const matchesType = selectedFilters.type === 'all' || session.type === selectedFilters.type;
 
-  const handleEditSession = (session: Session) => {
-    setSelectedSession(session);
-    setDialogOpen(true);
-  };
-
-  const handleViewSession = (session: Session) => {
-    setSelectedSession(session);
-    setViewDialogOpen(true);
-  };
-
-  const handleDeleteSession = (session: Session) => {
-    setSessionToDelete(session);
-    setDeleteDialogOpen(true);
-  };
-
-  const handleReprocessAI = async (session: Session) => {
-    try {
-      await reprocessWithAI(session.id, session.notes);
-      setSnackbar({
-        open: true,
-        message: 'Análisis de IA reprocesado correctamente',
-        severity: 'success'
-      });
-      refresh();
-    } catch {
-      setSnackbar({
-        open: true,
-        message: 'Error al reprocesar el análisis de IA',
-        severity: 'error'
-      });
-    }
-  };
-
-  const confirmDelete = async () => {
-    if (!sessionToDelete) return;
-
-    try {
-      await deleteSession(sessionToDelete.id);
-      setSnackbar({
-        open: true,
-        message: 'Sesión eliminada correctamente',
-        severity: 'success'
-      });
-      refresh();
-    } catch {
-      setSnackbar({
-        open: true,
-        message: 'Error al eliminar la sesión',
-        severity: 'error'
-      });
-    } finally {
-      setDeleteDialogOpen(false);
-      setSessionToDelete(null);
-    }
-  };
-
-  const handleDialogSuccess = () => {
-    setSnackbar({
-      open: true,
-      message: selectedSession ? 'Sesión actualizada correctamente' : 'Sesión creada correctamente',
-      severity: 'success'
-    });
-    refresh();
-  };
-
-  const getSelectedPatient = () => {
-    if (!selectedSession) return null;
-    return patients.find(p => p.id === selectedSession.patientId) || null;
-  };
-
-  const getSelectedProfessional = () => {
-    if (!selectedSession) return null;
-    return professionals.find(p => p.uid === selectedSession.professionalId) || null;
-  };
-
-  // Calcular estadísticas avanzadas
-  const stats = {
-    total: sessions.length,
-    completed: sessions.filter(s => s.status === 'completed').length,
-    scheduled: sessions.filter(s => s.status === 'scheduled').length,
-    withAI: sessions.filter(s => s.aiAnalysis).length,
-    thisWeek: sessions.filter(s => {
-      const sessionDate = new Date(s.date);
+      // Filtro por fecha
       const now = new Date();
-      const weekStart = new Date(now.setDate(now.getDate() - now.getDay()));
-      return sessionDate >= weekStart;
-    }).length,
-    averageDuration: sessions.length > 0 
-      ? Math.round(sessions.reduce((acc, s) => acc + (s.duration || 50), 0) / sessions.length)
-      : 0,
+      const sessionDate = session.date;
+      const daysDiff = Math.floor((now.getTime() - sessionDate.getTime()) / (1000 * 60 * 60 * 24));
+      const matchesDate = selectedFilters.dateRange === 'all' || daysDiff <= parseInt(selectedFilters.dateRange);
+
+      return matchesSearch && matchesStatus && matchesType && matchesDate;
+    });
+
+    setFilteredSessions(filtered);
+  }, [sessions, searchQuery, selectedFilters]);
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed': return <CheckCircle size={16} color="#10B981" />;
+      case 'scheduled': return <Clock size={16} color="#F59E0B" />;
+      case 'cancelled': return <XCircle size={16} color="#EF4444" />;
+      case 'no-show': return <AlertCircle size={16} color="#EF4444" />;
+      default: return <Clock size={16} color="#6B7280" />;
+    }
   };
 
-  const completionRate = stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0;
-  const aiCoverage = stats.total > 0 ? Math.round((stats.withAI / stats.total) * 100) : 0;
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'completed': return '#10B981';
+      case 'scheduled': return '#F59E0B';
+      case 'cancelled': return '#EF4444';
+      case 'no-show': return '#EF4444';
+      default: return '#6B7280';
+    }
+  };
+
+  const getStatusBgColor = (status: string) => {
+    switch (status) {
+      case 'completed': return '#ECFDF5';
+      case 'scheduled': return '#FFFBEB';
+      case 'cancelled': return '#FEF2F2';
+      case 'no-show': return '#FEF2F2';
+      default: return '#F9FAFB';
+    }
+  };
+
+  const getTypeLabel = (type: string) => {
+    switch (type) {
+      case 'individual': return 'Individual';
+      case 'group': return 'Grupal';
+      case 'family': return 'Familiar';
+      case 'couple': return 'Pareja';
+      default: return type;
+    }
+  };
+
+  const handleExportSessions = () => {
+    console.log('Exportando sesiones seleccionadas:', selectedSessions);
+  };
+
+  const handleAIAnalysis = () => {
+    console.log('Iniciando análisis IA para sesiones:', selectedSessions);
+  };
+
+  const handleSelectSession = (sessionId: string) => {
+    setSelectedSessions(prev => 
+      prev.includes(sessionId) 
+        ? prev.filter(id => id !== sessionId)
+        : [...prev, sessionId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedSessions.length === filteredSessions.length) {
+      setSelectedSessions([]);
+    } else {
+      setSelectedSessions(filteredSessions.map(s => s.id));
+    }
+  };
 
   return (
-    <ProtectedRoute requiredRoles={['admin', 'psychologist']}>
-      <DashboardLayout>
-        <Container maxWidth={false} sx={{ py: 4, px: 4 }}>
-          <Stack spacing={4}>
-            {/* Encabezado profesional */}
-            <Fade in timeout={400}>
-              <Box>
-                <Stack spacing={2}>
-                  <Typography 
-                    variant="h5" 
-                    fontWeight={600}
-                    sx={{
-                      background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                      backgroundClip: 'text',
-                      WebkitBackgroundClip: 'text',
-                      WebkitTextFillColor: 'transparent',
-                    }}
-                  >
-                    Sesiones Clínicas
-                  </Typography>
-                  <Typography 
-                    variant="body2" 
-                    color="text.secondary"
-                    sx={{ maxWidth: 600 }}
-                  >
-                    Registro estructurado, análisis automático y evolución emocional por paciente.
-                  </Typography>
-                </Stack>
+    <div style={{ 
+      padding: '2rem',
+      backgroundColor: '#F9FAFB',
+      minHeight: '100vh'
+    }}>
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        style={{ marginBottom: '2rem' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+          <div>
+            <h1 style={{
+              fontSize: '2rem',
+              fontWeight: 700,
+              color: '#1F2937',
+              margin: 0,
+              fontFamily: 'Space Grotesk, sans-serif'
+            }}>
+              Gestión de Sesiones
+            </h1>
+            <p style={{
+              fontSize: '1rem',
+              color: '#6B7280',
+              margin: '0.5rem 0 0 0',
+              fontFamily: 'Inter, sans-serif'
+            }}>
+              {filteredSessions.length} sesiones encontradas
+            </p>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '1rem' }}>
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => console.log('Nueva sesión')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                padding: '0.75rem 1.5rem',
+                backgroundColor: '#2563EB',
+                color: 'white',
+                border: 'none',
+                borderRadius: '0.75rem',
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'Inter, sans-serif'
+              }}
+            >
+              <Calendar size={18} />
+              Nueva Sesión
+            </motion.button>
+          </div>
+        </div>
 
-                <Box 
-                  display="flex" 
-                  justifyContent="space-between" 
-                  alignItems="center" 
-                  mt={3}
-                  sx={{
-                    flexDirection: { xs: 'column', sm: 'row' },
-                    gap: { xs: 2, sm: 0 }
-                  }}
-                >
-                  <Box />
-                  <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={handleCreateSession}
-                    size="large"
-                    sx={{
-                      borderRadius: 'xl',
-                      px: 4,
-                      py: 1.5,
+        {/* Métricas rápidas */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '1rem',
+          marginBottom: '2rem'
+        }}>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            style={{
+              padding: '1.5rem',
+              backgroundColor: 'white',
+              borderRadius: '1rem',
+              border: '1px solid #E5E7EB'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+              <CheckCircle size={20} color="#10B981" />
+              <span style={{
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                color: '#374151',
+                fontFamily: 'Inter, sans-serif'
+              }}>
+                Completadas
+              </span>
+            </div>
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: 700,
+              color: '#1F2937',
+              fontFamily: 'Space Grotesk, sans-serif'
+            }}>
+              {sessions.filter(s => s.status === 'completed').length}
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            style={{
+              padding: '1.5rem',
+              backgroundColor: 'white',
+              borderRadius: '1rem',
+              border: '1px solid #E5E7EB'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+              <Clock size={20} color="#F59E0B" />
+              <span style={{
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                color: '#374151',
+                fontFamily: 'Inter, sans-serif'
+              }}>
+                Programadas
+              </span>
+            </div>
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: 700,
+              color: '#1F2937',
+              fontFamily: 'Space Grotesk, sans-serif'
+            }}>
+              {sessions.filter(s => s.status === 'scheduled').length}
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            style={{
+              padding: '1.5rem',
+              backgroundColor: 'white',
+              borderRadius: '1rem',
+              border: '1px solid #E5E7EB'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+              <DollarSign size={20} color="#2563EB" />
+              <span style={{
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                color: '#374151',
+                fontFamily: 'Inter, sans-serif'
+              }}>
+                Ingresos MTD
+              </span>
+            </div>
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: 700,
+              color: '#1F2937',
+              fontFamily: 'Space Grotesk, sans-serif'
+            }}>
+              €{sessions.filter(s => s.paid).reduce((sum, s) => sum + s.cost, 0)}
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            style={{
+              padding: '1.5rem',
+              backgroundColor: 'white',
+              borderRadius: '1rem',
+              border: '1px solid #E5E7EB'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
+              <Brain size={20} color="#7C3AED" />
+              <span style={{
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                color: '#374151',
+                fontFamily: 'Inter, sans-serif'
+              }}>
+                Con IA
+              </span>
+            </div>
+            <div style={{
+              fontSize: '2rem',
+              fontWeight: 700,
+              color: '#1F2937',
+              fontFamily: 'Space Grotesk, sans-serif'
+            }}>
+              {sessions.filter(s => s.aiSummary).length}
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Barra de herramientas */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '1rem',
+          padding: '1rem',
+          backgroundColor: 'white',
+          borderRadius: '1rem',
+          border: '1px solid #E5E7EB'
+        }}>
+          {/* Búsqueda */}
+          <div style={{ position: 'relative', flex: 1, maxWidth: '400px' }}>
+            <Search size={18} style={{
+              position: 'absolute',
+              left: '1rem',
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: '#9CA3AF'
+            }} />
+            <input
+              type="text"
+              placeholder="Buscar sesiones..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.75rem 1rem 0.75rem 2.5rem',
+                border: '1px solid #E5E7EB',
+                borderRadius: '0.5rem',
+                fontSize: '0.875rem',
+                outline: 'none',
+                fontFamily: 'Inter, sans-serif'
+              }}
+            />
+          </div>
+
+          {/* Filtros */}
+          <motion.button
+            onClick={() => setShowFilters(!showFilters)}
+            whileHover={{ scale: 1.02 }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '0.75rem 1rem',
+              border: '1px solid #E5E7EB',
+              borderRadius: '0.5rem',
+              backgroundColor: showFilters ? '#EFF6FF' : 'white',
+              cursor: 'pointer',
+              fontSize: '0.875rem',
+              fontFamily: 'Inter, sans-serif'
+            }}
+          >
+            <Filter size={16} />
+            Filtros
+            <ChevronDown size={16} style={{
+              transform: showFilters ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform 0.2s'
+            }} />
+          </motion.button>
+
+          {/* Acciones en lote */}
+          {selectedSessions.length > 0 && (
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <motion.button
+                onClick={handleExportSessions}
+                whileHover={{ scale: 1.02 }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.75rem 1rem',
+                  backgroundColor: '#10B981',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.875rem',
+                  cursor: 'pointer',
+                  fontFamily: 'Inter, sans-serif'
+                }}
+              >
+                <Download size={16} />
+                Exportar ({selectedSessions.length})
+              </motion.button>
+              
+              <motion.button
+                onClick={handleAIAnalysis}
+                whileHover={{ scale: 1.02 }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.75rem 1rem',
+                  backgroundColor: '#7C3AED',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.875rem',
+                  cursor: 'pointer',
+                  fontFamily: 'Inter, sans-serif'
+                }}
+              >
+                <Brain size={16} />
+                Análisis IA
+              </motion.button>
+            </div>
+          )}
+        </div>
+
+        {/* Panel de filtros */}
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              style={{
+                overflow: 'hidden',
+                backgroundColor: 'white',
+                borderRadius: '1rem',
+                border: '1px solid #E5E7EB',
+                marginTop: '1rem'
+              }}
+            >
+              <div style={{
+                padding: '1.5rem',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+                gap: '1rem'
+              }}>
+                <div>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    color: '#374151',
+                    marginBottom: '0.5rem',
+                    fontFamily: 'Inter, sans-serif'
+                  }}>
+                    Estado
+                  </label>
+                  <select
+                    value={selectedFilters.status}
+                    onChange={(e) => setSelectedFilters(prev => ({ ...prev, status: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      border: '1px solid #E5E7EB',
+                      borderRadius: '0.5rem',
                       fontSize: '0.875rem',
-                      fontWeight: 600,
-                      textTransform: 'none',
-                      background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${alpha(theme.palette.primary.main, 0.8)} 100%)`,
-                      boxShadow: `0 8px 16px ${alpha(theme.palette.primary.main, 0.3)}`,
-                      '&:hover': {
-                        transform: 'translateY(-2px)',
-                        boxShadow: `0 12px 20px ${alpha(theme.palette.primary.main, 0.4)}`,
-                      }
+                      fontFamily: 'Inter, sans-serif'
                     }}
                   >
-                    Nueva Sesión
-                  </Button>
-                </Box>
-              </Box>
-            </Fade>
+                    <option value="all">Todos</option>
+                    <option value="completed">Completadas</option>
+                    <option value="scheduled">Programadas</option>
+                    <option value="cancelled">Canceladas</option>
+                    <option value="no-show">No asistió</option>
+                  </select>
+                </div>
 
-            {/* Estadísticas visuales */}
-            <Box 
-              sx={{ 
-                display: 'flex', 
-                flexWrap: 'wrap', 
-                gap: 3,
-                '& > *': {
-                  flex: '1 1 280px',
-                  minWidth: '280px'
-                }
-              }}
-            >
-              <StatCard
-                title="Total de Sesiones"
-                value={stats.total}
-                icon={<PsychologyIcon sx={{ fontSize: 28 }} />}
-                color={theme.palette.primary.main}
-                subtitle={`${stats.thisWeek} esta semana`}
-                trend={{ value: 12, isPositive: true }}
-              />
-              <StatCard
-                title="Tasa de Completitud"
-                value={`${completionRate}%`}
-                icon={<CheckCircleIcon sx={{ fontSize: 28 }} />}
-                color={theme.palette.success.main}
-                subtitle={`${stats.completed} completadas`}
-                trend={{ value: 8, isPositive: true }}
-              />
-              <StatCard
-                title="Sesiones Programadas"
-                value={stats.scheduled}
-                icon={<ScheduleIcon sx={{ fontSize: 28 }} />}
-                color={theme.palette.info.main}
-                subtitle="Próximas citas"
-              />
-              <StatCard
-                title="Análisis con IA"
-                value={`${aiCoverage}%`}
-                icon={<SmartToyIcon sx={{ fontSize: 28 }} />}
-                color={theme.palette.secondary.main}
-                subtitle={`${stats.withAI} analizadas`}
-                trend={{ value: 15, isPositive: true }}
-              />
-              <StatCard
-                title="Duración Promedio"
-                value={`${stats.averageDuration} min`}
-                icon={<AssessmentIcon sx={{ fontSize: 28 }} />}
-                color={theme.palette.warning.main}
-                subtitle="Por sesión"
-              />
-            </Box>
+                <div>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    color: '#374151',
+                    marginBottom: '0.5rem',
+                    fontFamily: 'Inter, sans-serif'
+                  }}>
+                    Tipo
+                  </label>
+                  <select
+                    value={selectedFilters.type}
+                    onChange={(e) => setSelectedFilters(prev => ({ ...prev, type: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      border: '1px solid #E5E7EB',
+                      borderRadius: '0.5rem',
+                      fontSize: '0.875rem',
+                      fontFamily: 'Inter, sans-serif'
+                    }}
+                  >
+                    <option value="all">Todos</option>
+                    <option value="individual">Individual</option>
+                    <option value="group">Grupal</option>
+                    <option value="family">Familiar</option>
+                    <option value="couple">Pareja</option>
+                  </select>
+                </div>
 
-            {/* Filtros avanzados */}
-            <Fade in timeout={800}>
-              <Box>
-                <SessionFilters
-                  filters={filters}
-                  onFiltersChange={setFilters}
-                  patients={patients}
-                  professionals={professionals}
-                  loading={loading}
-                />
-              </Box>
-            </Fade>
+                <div>
+                  <label style={{
+                    display: 'block',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    color: '#374151',
+                    marginBottom: '0.5rem',
+                    fontFamily: 'Inter, sans-serif'
+                  }}>
+                    Período
+                  </label>
+                  <select
+                    value={selectedFilters.dateRange}
+                    onChange={(e) => setSelectedFilters(prev => ({ ...prev, dateRange: e.target.value }))}
+                    style={{
+                      width: '100%',
+                      padding: '0.5rem',
+                      border: '1px solid #E5E7EB',
+                      borderRadius: '0.5rem',
+                      fontSize: '0.875rem',
+                      fontFamily: 'Inter, sans-serif'
+                    }}
+                  >
+                    <option value="7">Últimos 7 días</option>
+                    <option value="30">Últimos 30 días</option>
+                    <option value="90">Últimos 90 días</option>
+                    <option value="all">Todo el tiempo</option>
+                  </select>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
 
-            {/* Error */}
-            {error && (
-              <Fade in timeout={600}>
-                <Alert 
-                  severity="error" 
-                  sx={{ 
-                    borderRadius: 'xl',
-                    '& .MuiAlert-message': {
-                      fontWeight: 500
-                    }
-                  }}
-                >
-                  Error al cargar las sesiones: {error.message}
-                </Alert>
-              </Fade>
-            )}
-
-            {/* Tabla de sesiones */}
-            <Fade in timeout={1000}>
-              <Paper 
-                sx={{ 
-                  borderRadius: 'xl',
-                  overflow: 'hidden',
-                  border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-                  background: `linear-gradient(145deg, ${alpha(theme.palette.background.paper, 0.8)} 0%, ${alpha(theme.palette.background.paper, 0.4)} 100%)`,
-                  backdropFilter: 'blur(20px)',
-                }}
-              >
-                <SessionsTable
-                  sessions={sessions}
-                  patients={patients}
-                  professionals={professionals}
-                  loading={loading}
-                  error={error}
-                  onEdit={handleEditSession}
-                  onView={handleViewSession}
-                  onDelete={handleDeleteSession}
-                  onReprocessAI={handleReprocessAI}
-                />
-              </Paper>
-            </Fade>
-
-            {/* Diálogo de creación/edición */}
-            <SessionDialog
-              open={dialogOpen}
-              onClose={() => setDialogOpen(false)}
-              session={selectedSession}
-              onSuccess={handleDialogSuccess}
+      {/* Lista de sesiones */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
+        style={{
+          backgroundColor: 'white',
+          borderRadius: '1rem',
+          border: '1px solid #E5E7EB',
+          overflow: 'hidden'
+        }}
+      >
+        <div style={{ padding: '1rem', borderBottom: '1px solid #E5E7EB' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            <input
+              type="checkbox"
+              checked={selectedSessions.length === filteredSessions.length && filteredSessions.length > 0}
+              onChange={handleSelectAll}
+              style={{ cursor: 'pointer' }}
             />
+            <span style={{
+              fontSize: '0.875rem',
+              fontWeight: 600,
+              color: '#374151',
+              fontFamily: 'Inter, sans-serif'
+            }}>
+              Seleccionar todas las sesiones
+            </span>
+          </div>
+        </div>
 
-            {/* Diálogo de vista detallada */}
-            <SessionView
-              open={viewDialogOpen}
-              onClose={() => setViewDialogOpen(false)}
-              session={selectedSession}
-              patient={getSelectedPatient()}
-              professional={getSelectedProfessional()}
-              onEdit={() => {
-                setViewDialogOpen(false);
-                setDialogOpen(true);
+        <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+          {filteredSessions.map((session, index) => (
+            <motion.div
+              key={session.id}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.05 }}
+              style={{
+                padding: '1.5rem',
+                borderBottom: '1px solid #F3F4F6',
+                backgroundColor: selectedSessions.includes(session.id) ? '#EFF6FF' : 'transparent',
+                cursor: 'pointer'
               }}
-              onReprocessAI={() => handleReprocessAI(selectedSession!)}
-              aiProcessing={aiProcessing}
-            />
-
-            {/* Diálogo de confirmación de eliminación */}
-            <Dialog
-              open={deleteDialogOpen}
-              onClose={() => setDeleteDialogOpen(false)}
-              PaperProps={{
-                sx: {
-                  borderRadius: 'xl',
-                  background: `linear-gradient(145deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.background.paper, 0.9)} 100%)`,
-                  backdropFilter: 'blur(20px)',
-                }
-              }}
+              onClick={() => handleSelectSession(session.id)}
             >
-              <DialogTitle sx={{ fontWeight: 600 }}>
-                Confirmar Eliminación
-              </DialogTitle>
-              <DialogContent>
-                <DialogContentText sx={{ color: 'text.primary' }}>
-                  ¿Estás seguro de que deseas eliminar esta sesión? Esta acción no se puede deshacer.
-                  {sessionToDelete?.aiAnalysis && (
-                    <Box 
-                      component="span" 
-                      sx={{ 
-                        display: 'block', 
-                        mt: 2, 
-                        p: 2,
-                        borderRadius: 'xl',
-                        bgcolor: alpha(theme.palette.warning.main, 0.1),
-                        color: 'warning.main',
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <input
+                  type="checkbox"
+                  checked={selectedSessions.includes(session.id)}
+                  onChange={() => handleSelectSession(session.id)}
+                  style={{ cursor: 'pointer' }}
+                  onClick={(e) => e.stopPropagation()}
+                />
+                
+                <div style={{ flex: 1 }}>
+                  {/* Header de la sesión */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        {getStatusIcon(session.status)}
+                        <span style={{
+                          padding: '0.25rem 0.75rem',
+                          borderRadius: '1rem',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          backgroundColor: getStatusBgColor(session.status),
+                          color: getStatusColor(session.status),
+                          fontFamily: 'Inter, sans-serif'
+                        }}>
+                          {session.status === 'completed' ? 'Completada' :
+                           session.status === 'scheduled' ? 'Programada' :
+                           session.status === 'cancelled' ? 'Cancelada' : 'No asistió'}
+                        </span>
+                      </div>
+                      
+                      <span style={{
+                        padding: '0.25rem 0.75rem',
+                        borderRadius: '1rem',
+                        fontSize: '0.75rem',
                         fontWeight: 600,
-                        border: `1px solid ${alpha(theme.palette.warning.main, 0.2)}`
-                      }}
-                    >
-                      ⚠️ Esta sesión incluye análisis de IA que también se perderá.
-                    </Box>
-                  )}
-                </DialogContentText>
-              </DialogContent>
-              <DialogActions sx={{ p: 3, gap: 2 }}>
-                <Button 
-                  onClick={() => setDeleteDialogOpen(false)}
-                  sx={{ borderRadius: 'xl', px: 3 }}
-                >
-                  Cancelar
-                </Button>
-                <Button 
-                  onClick={confirmDelete} 
-                  color="error" 
-                  variant="contained"
-                  disabled={actionLoading}
-                  sx={{ 
-                    borderRadius: 'xl', 
-                    px: 3,
-                    background: `linear-gradient(135deg, ${theme.palette.error.main} 0%, ${alpha(theme.palette.error.main, 0.8)} 100%)`,
-                  }}
-                >
-                  Eliminar
-                </Button>
-              </DialogActions>
-            </Dialog>
+                        backgroundColor: '#F3F4F6',
+                        color: '#374151',
+                        fontFamily: 'Inter, sans-serif'
+                      }}>
+                        {getTypeLabel(session.type)}
+                      </span>
 
-            {/* Snackbar para notificaciones */}
-            <Snackbar
-              open={snackbar.open}
-              autoHideDuration={6000}
-              onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
-              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-            >
-              <Alert 
-                onClose={() => setSnackbar(prev => ({ ...prev, open: false }))} 
-                severity={snackbar.severity}
-                sx={{ 
-                  borderRadius: 'xl',
-                  fontWeight: 500,
-                  '& .MuiAlert-icon': {
-                    fontSize: '1.25rem'
-                  }
-                }}
-              >
-                {snackbar.message}
-              </Alert>
-            </Snackbar>
-          </Stack>
-        </Container>
-      </DashboardLayout>
-    </ProtectedRoute>
+                      {session.aiSummary && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                          <Sparkles size={14} color="#7C3AED" />
+                          <span style={{
+                            fontSize: '0.75rem',
+                            color: '#7C3AED',
+                            fontWeight: 600,
+                            fontFamily: 'Inter, sans-serif'
+                          }}>
+                            IA
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                      <div style={{
+                        fontSize: '0.875rem',
+                        color: '#6B7280',
+                        fontFamily: 'Inter, sans-serif'
+                      }}>
+                        {session.date.toLocaleDateString('es-ES')} • {session.date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                      
+                      <div style={{
+                        fontSize: '0.875rem',
+                        fontWeight: 600,
+                        color: session.paid ? '#10B981' : '#EF4444',
+                        fontFamily: 'Inter, sans-serif'
+                      }}>
+                        €{session.cost}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Contenido de la sesión */}
+                  {session.status === 'completed' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                      <div>
+                        <h4 style={{
+                          fontSize: '0.875rem',
+                          fontWeight: 600,
+                          color: '#374151',
+                          marginBottom: '0.5rem',
+                          fontFamily: 'Inter, sans-serif'
+                        }}>
+                          Notas de la sesión
+                        </h4>
+                        <p style={{
+                          fontSize: '0.875rem',
+                          color: '#6B7280',
+                          lineHeight: 1.5,
+                          margin: 0,
+                          fontFamily: 'Inter, sans-serif'
+                        }}>
+                          {session.notes}
+                        </p>
+
+                        {session.interventions.length > 0 && (
+                          <div style={{ marginTop: '1rem' }}>
+                            <h5 style={{
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              color: '#374151',
+                              marginBottom: '0.5rem',
+                              fontFamily: 'Inter, sans-serif'
+                            }}>
+                              Intervenciones
+                            </h5>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                              {session.interventions.map((intervention, idx) => (
+                                <span
+                                  key={idx}
+                                  style={{
+                                    padding: '0.25rem 0.5rem',
+                                    backgroundColor: '#EFF6FF',
+                                    color: '#2563EB',
+                                    borderRadius: '0.5rem',
+                                    fontSize: '0.75rem',
+                                    fontFamily: 'Inter, sans-serif'
+                                  }}
+                                >
+                                  {intervention}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        {session.aiSummary && (
+                          <div style={{
+                            padding: '1rem',
+                            backgroundColor: '#F8FAFC',
+                            borderRadius: '0.75rem',
+                            border: '1px solid #E2E8F0',
+                            marginBottom: '1rem'
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                              <Brain size={16} color="#7C3AED" />
+                              <h4 style={{
+                                fontSize: '0.875rem',
+                                fontWeight: 600,
+                                color: '#7C3AED',
+                                margin: 0,
+                                fontFamily: 'Inter, sans-serif'
+                              }}>
+                                Resumen IA
+                              </h4>
+                            </div>
+                            <p style={{
+                              fontSize: '0.875rem',
+                              color: '#475569',
+                              lineHeight: 1.5,
+                              margin: 0,
+                              fontFamily: 'Inter, sans-serif'
+                            }}>
+                              {session.aiSummary}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Estado emocional */}
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: '1fr 1fr',
+                          gap: '1rem',
+                          marginBottom: '1rem'
+                        }}>
+                          <div style={{
+                            padding: '0.75rem',
+                            backgroundColor: '#FEF2F2',
+                            borderRadius: '0.5rem',
+                            textAlign: 'center'
+                          }}>
+                            <div style={{
+                              fontSize: '0.75rem',
+                              color: '#6B7280',
+                              marginBottom: '0.25rem',
+                              fontFamily: 'Inter, sans-serif'
+                            }}>
+                              Estado inicial
+                            </div>
+                            <div style={{
+                              fontSize: '1.5rem',
+                              fontWeight: 700,
+                              color: '#EF4444',
+                              fontFamily: 'Space Grotesk, sans-serif'
+                            }}>
+                              {session.emotionalState.before}/10
+                            </div>
+                          </div>
+                          
+                          <div style={{
+                            padding: '0.75rem',
+                            backgroundColor: '#ECFDF5',
+                            borderRadius: '0.5rem',
+                            textAlign: 'center'
+                          }}>
+                            <div style={{
+                              fontSize: '0.75rem',
+                              color: '#6B7280',
+                              marginBottom: '0.25rem',
+                              fontFamily: 'Inter, sans-serif'
+                            }}>
+                              Estado final
+                            </div>
+                            <div style={{
+                              fontSize: '1.5rem',
+                              fontWeight: 700,
+                              color: '#10B981',
+                              fontFamily: 'Space Grotesk, sans-serif'
+                            }}>
+                              {session.emotionalState.after}/10
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Tareas para casa */}
+                        {session.homework.length > 0 && (
+                          <div>
+                            <h5 style={{
+                              fontSize: '0.75rem',
+                              fontWeight: 600,
+                              color: '#374151',
+                              marginBottom: '0.5rem',
+                              fontFamily: 'Inter, sans-serif'
+                            }}>
+                              Tareas para casa
+                            </h5>
+                            <ul style={{
+                              margin: 0,
+                              paddingLeft: '1rem',
+                              fontSize: '0.75rem',
+                              color: '#6B7280',
+                              fontFamily: 'Inter, sans-serif'
+                            }}>
+                              {session.homework.map((task, idx) => (
+                                <li key={idx} style={{ marginBottom: '0.25rem' }}>
+                                  {task}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sesión programada */}
+                  {session.status === 'scheduled' && (
+                    <div style={{
+                      padding: '1rem',
+                      backgroundColor: '#FFFBEB',
+                      borderRadius: '0.75rem',
+                      border: '1px solid #FDE68A'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Clock size={16} color="#F59E0B" />
+                        <span style={{
+                          fontSize: '0.875rem',
+                          color: '#92400E',
+                          fontFamily: 'Inter, sans-serif'
+                        }}>
+                          Sesión programada para {session.date.toLocaleDateString('es-ES')} a las {session.date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Acciones */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      console.log('Ver sesión', session.id);
+                    }}
+                    style={{
+                      padding: '0.5rem',
+                      borderRadius: '0.5rem',
+                      border: 'none',
+                      backgroundColor: '#EFF6FF',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Eye size={16} color="#2563EB" />
+                  </motion.button>
+                  
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.9 }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      console.log('Editar sesión', session.id);
+                    }}
+                    style={{
+                      padding: '0.5rem',
+                      borderRadius: '0.5rem',
+                      border: 'none',
+                      backgroundColor: '#FFFBEB',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    <Edit size={16} color="#F59E0B" />
+                  </motion.button>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+
+        {filteredSessions.length === 0 && (
+          <div style={{
+            padding: '3rem',
+            textAlign: 'center',
+            color: '#6B7280'
+          }}>
+            <FileText size={48} color="#D1D5DB" style={{ marginBottom: '1rem' }} />
+            <p style={{
+              fontSize: '1rem',
+              fontFamily: 'Inter, sans-serif'
+            }}>
+              No se encontraron sesiones con los filtros aplicados
+            </p>
+          </div>
+        )}
+      </motion.div>
+    </div>
   );
 }
